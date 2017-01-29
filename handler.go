@@ -5,16 +5,12 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sync"
 )
-
-type Getter interface {
-	Get(url string) (resp *Response, err error)
-}
 
 type hostMatcher struct {
 	pattern *regexp.Regexp // e.g. "x-user: (.*)"
 	target  string         // e.g. "http://service.example.com/user/$1"
-	getter  Getter
 }
 
 type HostMatcherHandler struct {
@@ -22,8 +18,8 @@ type HostMatcherHandler struct {
 	matches []*hostMatcher
 }
 
-func (h *HostMatcherHandler) AddHost(pattern *regexp.Regexp, target string, getter Getter) {
-	h.matches = append(h.matches, &hostMatcher{pattern, target, getter})
+func (h *HostMatcherHandler) AddHost(pattern *regexp.Regexp, target string) {
+	h.matches = append(h.matches, &hostMatcher{pattern, target})
 }
 
 func (h *HostMatcherHandler) Handler(handler http.Handler) {
@@ -35,21 +31,33 @@ func (h *HostMatcherHandler) HandleFunc(handler func(http.ResponseWriter, *http.
 }
 
 func (h *HostMatcherHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var wg sync.WaitGroup
 
 	for _, match := range h.matches {
 		for key, value := range r.Header {
 			header := fmt.Sprintf("%s: %s", key, value[0])
 			t := match.pattern.ReplaceAllString(header, match.target)
+			log.Println("rad")
 
-			// how to test this?
-			resp, err := match.getter.Get(t)
-			if err != nil {
-				log.Fatal(err)
-			}
+			go func() {
+				wg.Add(1)
+				defer wg.Done()
 
-			log.Println(resp)
+				log.Println("sweet")
+
+				resp, err := http.Get(t)
+				if err != nil {
+					log.Fatal("ERROR: ", err)
+				}
+
+				log.Println("sweeter")
+				log.Println("cat", t, r, resp)
+			}()
 		}
 	}
+
+	wg.Wait()
+	log.Println("here")
 
 	h.handler.ServeHTTP(w, r)
 	return

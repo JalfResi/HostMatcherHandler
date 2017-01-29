@@ -1,6 +1,7 @@
 package hostmatcherhandler
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,6 @@ import (
 
 func TestHostMatcherHandler(t *testing.T) {
 	log.SetFlags(log.Lshortfile)
-
-	OkHandlerFunc := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
 
 	// Create a request to pass to our handler. We dont have any query parameters
 	// for now, so we'll pass 'nil' as the third parameter
@@ -25,12 +24,20 @@ func TestHostMatcherHandler(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler := &HostMatcherHandler{}
 
-	handler.HandleFunc(OkHandlerFunc)
+	handler.HandleFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
-	ts := httptest.NewServer(http.HandlerFunc(OkHandlerFunc))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		if r.URL.Query().Get("user") != "ABC123" {
+			t.Errorf("sub-query url query string returned wrong user: got %v expected %v", r.URL.Query(), "user=ABC123")
+		}
+	}))
 	defer ts.Close()
 
-	handler.AddHost(regexp.MustCompile("X-User: (.*)"), "http://service.example.com/user/$1")
+	target := fmt.Sprintf("%s?user=$1", ts.URL)
+
+	handler.AddHost(regexp.MustCompile("X-User: (.*)"), target)
 
 	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
 	// directly and pass in our request and ResponseRecorder
