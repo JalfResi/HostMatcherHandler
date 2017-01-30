@@ -2,6 +2,7 @@ package hostmatcherhandler
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -24,11 +25,16 @@ func TestHostMatcherHandler(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler := &HostMatcherHandler{}
 
-	handler.HandleFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	// original proxy request response
+	handler.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"user": "ABC123"}`)
+	})
 
+	// sub-request server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-
+		io.WriteString(w, `{"user": "ABC123", "name": "Ben Davies", "Age": 38}`)
 		if r.URL.Query().Get("user") != "ABC123" {
 			t.Errorf("sub-query url query string returned wrong user: got %v expected %v", r.URL.Query(), "user=ABC123")
 		}
@@ -46,5 +52,12 @@ func TestHostMatcherHandler(t *testing.T) {
 	// Check the status code is what we expect
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v expected %v", status, http.StatusOK)
+	}
+
+	// Check the response body is what we expect.
+	expected := `{"user": {"user": "ABC123", "name": "Ben Davies", "Age": 38}}`
+	if rr.Body.String() != expected {
+		t.Errorf("handler returned unexpected body: got %v want %v",
+			rr.Body.String(), expected)
 	}
 }
